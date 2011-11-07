@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Text;
 using System.Windows.Forms;
 using System.Diagnostics;
 using System.Drawing;
@@ -25,45 +24,24 @@ namespace Mastermind
         private ColorSequenceComparer csc; // so we only have to make one of these
         private Stopwatch stopWatch;
 
+        // boolean arrays for calculateMatch function
+        bool[] blackVisited; // store if we recorded a black hit here
+        bool[] whiteVisited; // store if we recorded a white hit here
+
         public MastermindAI(Mastermind mastermind)
         {          
             this.mastermind = mastermind;
             csc = new ColorSequenceComparer();
             current_set = new HashSet<ColorSequence>();
             generatePossibilities(new ColorSequence(), 0);
+
+            blackVisited = new bool[DEPTH];
+            whiteVisited = new bool[DEPTH];
             
             stopWatch = new Stopwatch();
             stopWatch.Start();            
             play();            
             mastermind.revealAnswer();
-            //checker2();
-        }
-
-        // used for sanity checking, debugging
-        private void checker()
-        {
-            int i, j = 0;
-            foreach (ColorSequence possibility in current_set)
-            {                
-                for (i = 0; i < DEPTH; i++)
-                    if (possibility[i] == 1)
-                        break;
-                if (i == DEPTH)
-                    j++;
-            }
-            Console.WriteLine(j);
-        }
-
-        private void checker2()
-        {
-            byte[][] seqs = { new byte[] { 1, 1, 1, 1, 1 }, new byte[] { 1, 1, 1, 1, 2 }, new byte[] { 4, 4, 8, 8, 8 }, new byte[] { 1,1,1,2,4 }, new byte[] { 1,1,2,2,4 },
-                              new byte[] {1,1,2,4,8}, new byte[] {1,16,2,4,8}};
-
-            foreach(byte[] seq in seqs)
-            {
-                Possibility profile = profilePossibility(new ColorSequence(seq));
-                Console.WriteLine(profile);
-            }
         }
 
         // recursive approach is easiest way to populate possibilities (colors ^ slots = 8 ^ 5 = 32768)
@@ -77,7 +55,7 @@ namespace Mastermind
             {
                 ColorSequence c2 = (ColorSequence)c.Clone();
                 c2[n] = (byte)(1 << i);
-                generatePossibilities(c2, n + 1);           
+                generatePossibilities(c2, n + 1);
             }            
         }
 
@@ -90,14 +68,14 @@ namespace Mastermind
          **/
         private Match calculateMatch(ColorSequence guess, ColorSequence c)
         {
-            bool[] blackVisited = new bool[DEPTH]; // store if we recorded a black hit here
-            bool[] whiteVisited = new bool[DEPTH]; // store if we recorded a white hit here
             int blackHits = 0;
-            int whiteHits = 0;            
+            int whiteHits = 0;
 
             // compare for black hits
             for (int i = 0; i < DEPTH; i++)
-            {                
+            {
+                blackVisited[i] = false;
+                whiteVisited[i] = false;
                 // compare the selected color with the code in same location to see if black hit
                 if (guess[i] == c[i]) {
                     blackHits++;
@@ -114,12 +92,10 @@ namespace Mastermind
                 for (int j = 0; j < DEPTH; j++)
                 {
                     if (j == i) continue; // already checked these when looking for black hits above
-                    if (!blackVisited[j] && !whiteVisited[j] && guess[j] == c[i])
-                    {
-                        whiteHits++;
-                        whiteVisited[j] = true;
-                        break;
-                    }
+                    if (guess[j] != c[i] || blackVisited[j] || whiteVisited[j]) continue;
+                    whiteHits++;
+                    whiteVisited[j] = true;
+                    break;
                 }
             }
             return new Match(blackHits, whiteHits);
@@ -147,28 +123,47 @@ namespace Mastermind
          * This takes a ColorSequence and profiles the possibility.
          * This means that it calculates the worst-case scenario, where guessing this possibility leads to the largest number of remaining possible sequences.
          */
-        private Possibility profilePossibility(ColorSequence possibility)
+        private Possibility profilePossibility(ColorSequence possibility, Possibility bestPossibility)
         {            
             int maxPossibilities = 0;
-            ColorSequence maxSequence = null;
             int maxW = 0;
             int maxB = 0;
             for (int w = 0; w <= 5; w++)
             {
                 for (int b = 0; b <= 5; b++)
                 {
-                    if (w + b > 5) continue;
-                    HashSet<ColorSequence> new_set = restrictSet(possibility, w, b);
-                    if (new_set.Count > maxPossibilities)
+                    if (w + b > 5) continue; // skip the white/black combination if it's not possible
+
+                    int possibilitiesRemaining = calculatePossibilitiesLeftAfterAssumedResponse(possibility, w, b, bestPossibility.worstCaseSetCount);
+
+                    if (possibilitiesRemaining >= bestPossibility.worstCaseSetCount)
                     {
-                        maxPossibilities = new_set.Count;
-                        maxSequence = possibility;
+                        // aready worse than best possibility's count, so no point in continuing
+                        return new Possibility(possibilitiesRemaining, possibility, w, b);
+                    }
+                    if (possibilitiesRemaining > maxPossibilities)
+                    {
+                        maxPossibilities = possibilitiesRemaining;
                         maxW = w;
                         maxB = b;
                     }
                 }
             }
             return new Possibility(maxPossibilities, possibility, maxW, maxB);
+        }
+
+        private int calculatePossibilitiesLeftAfterAssumedResponse(ColorSequence c, int w, int b, int currentBest)
+        {
+            int count = 0;
+            foreach (ColorSequence possibility in current_set)
+            {
+                Match m = calculateMatch(possibility, c);
+                if (m.blackHits == b && m.whiteHits == w)
+                    count++;
+                if (count >= currentBest) // already worse than best, so just return now
+                    return count;
+            }
+            return count;
         }
 
         // play the game!
@@ -186,7 +181,7 @@ namespace Mastermind
             byte[] firstGuess = {1,1,2,4,8};
             ColorSequence guess = new ColorSequence(firstGuess);
             Match m = calculateMatch(code, guess);
-            if (showOnGUI(guess, m))
+            if (showOnGui(guess, m))
                 return;
             current_set = restrictSet(guess, m.whiteHits, m.blackHits);
 
@@ -199,7 +194,7 @@ namespace Mastermind
                 Possibility bestPossibility = new Possibility(int.MaxValue, null, 0, 0);
                 foreach (ColorSequence possibility in current_set)
                 {
-                    Possibility profile = profilePossibility(possibility);
+                    Possibility profile = profilePossibility(possibility, bestPossibility);
                     if (profile.worstCaseSetCount < bestPossibility.worstCaseSetCount) // found a better possibility
                     {
                         bestPossibility = profile;
@@ -210,7 +205,7 @@ namespace Mastermind
                 }
                 //Console.WriteLine(bestPossibility);
                 m = calculateMatch(code, bestPossibility.sequence);
-                if (showOnGUI(bestPossibility.sequence, m))
+                if (showOnGui(bestPossibility.sequence, m))
                     return;
                 current_set = restrictSet(bestPossibility.sequence, m.whiteHits, m.blackHits);
             }
@@ -220,13 +215,13 @@ namespace Mastermind
          * Shows the AI's guess on the screen, with the appropriate pegs for the match it received.
          * The bool return value signifies whether game is over or not, which is handled by play(), this function's caller.
          */
-        private bool showOnGUI(ColorSequence guess, Match m)
+        private bool showOnGui(ColorSequence guess, Match m)
         {
             int x;
             // show the guess on the screen
             for (x = 0; x < DEPTH; x++)
             {
-                mastermind.holes[x, mastermind.activeRow].Image = mastermind.images[(int)log2(guess[x])];
+                mastermind.holes[x, mastermind.activeRow].Image = mastermind.images[log2(guess[x])];
             }
             // show appropriate pins for the match
             x = 0;

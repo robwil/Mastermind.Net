@@ -124,7 +124,7 @@ namespace Mastermind
                     holes[x, y].Size = imageSize;
                     holes[x, y].Image = inactiveHoleImage;
                     holes[x, y].Location = new Point(baseX + x * (imageSize.Width + xSpacing), baseY + y * (imageSize.Height + ySpacing));
-                    holes[x, y].Click += new EventHandler(Hole_Click);
+                    holes[x, y].Click += new EventHandler(holeClick);
                     holes[x, y].Name = "hole" + x + "," + y;
                     this.Controls.Add(holes[x, y]);
                 }
@@ -139,7 +139,7 @@ namespace Mastermind
                 colorImages[i].Size = imageSize;
                 colorImages[i].Image = images[i];
                 colorImages[i].Location = new Point(baseX + i * (imageSize.Width + xSpacing), baseY);
-                colorImages[i].Click += new EventHandler(Color_Click);
+                colorImages[i].Click += new EventHandler(colorClick);
                 colorImages[i].Name = "color" + i;
                 this.Controls.Add(colorImages[i]);
             }
@@ -164,7 +164,7 @@ namespace Mastermind
             }           
         }        
 
-        void Color_Click(object sender, EventArgs e)
+        void colorClick(object sender, EventArgs e)
         {
             if (!gameStarted)
                 return;
@@ -188,7 +188,7 @@ namespace Mastermind
             }
         }
 
-        void Hole_Click(object sender, EventArgs e)
+        void holeClick(object sender, EventArgs e)
         {
             if (!gameStarted)
                 return;
